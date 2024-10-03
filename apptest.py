@@ -1,210 +1,129 @@
 import streamlit as st
+import mysql.connector
 import pandas as pd
-from datetime import datetime
 
-# In-memory storage (replace with database later)
-patients_data = []
-doctors_data = []
-appointments_data = []
+# Function to create a database connection
+def create_connection():
+    connection = mysql.connector.connect(
+        host="your-host",  # Replace with your MySQL host
+        user="your-username",  # Replace with your MySQL username
+        password="your-password",  # Replace with your MySQL password
+        database="shms",  # Replace with your MySQL database name
+    )
+    return connection
 
-# Hardcoded user credentials for demonstration
-USER_CREDENTIALS = {
-    "admin": "password",  # Username: admin, Password: password
-    "doctor": "password",  # Username: doctor, Password: password
-    "patient": "password"  # Username: patient, Password: password
-}
+# Function to authenticate users
+def authenticate_user(username, password):
+    conn = create_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM users WHERE username=%s AND password=%s", (username, password))
+    user = cursor.fetchone()
+    conn.close()
+    return user
 
-# Function to generate unique IDs
-def generate_id(data_list):
-    if len(data_list) == 0:
-        return 1
-    else:
-        return data_list[-1]['id'] + 1
+# Function to get doctors for the patient to book appointments
+def get_available_doctors():
+    conn = create_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM doctors WHERE availability = 'available'")
+    doctors = cursor.fetchall()
+    conn.close()
+    return doctors
 
-# Function to handle login
-def login(username, password):
-    return USER_CREDENTIALS.get(username) == password
+# Function for admin to add a new patient
+def add_patient(username, password, name, age, gender):
+    conn = create_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO patients (username, password, name, age, gender) VALUES (%s, %s, %s, %s, %s)", (username, password, name, age, gender))
+    conn.commit()
+    conn.close()
 
-# Initialize session state variables
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
-if 'role' not in st.session_state:
-    st.session_state.role = None
+# Function for doctors to toggle availability
+def toggle_availability(doctor_id, availability):
+    conn = create_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE doctors SET availability = %s WHERE id = %s", (availability, doctor_id))
+    conn.commit()
+    conn.close()
 
-# Streamlit app
-st.title("Smart Healthcare Management System")
-
-# Login form
-if not st.session_state.logged_in:
-    st.subheader("Login")
+# Function to display the login page
+def login_page():
+    st.title("Login")
     username = st.text_input("Username")
-    password = st.text_input("Password", type='password')
-
+    password = st.text_input("Password", type="password")
     if st.button("Login"):
-        if login(username, password):
+        user = authenticate_user(username, password)
+        if user:
             st.session_state.logged_in = True
-            st.session_state.role = username  # Store the role (username as role)
-            st.success(f"Welcome {username}!")
+            st.session_state.user = user
         else:
-            st.error("Invalid credentials. Please try again.")
-else:
-    # Admin Dashboard
-    if st.session_state.role == "admin":
-        st.sidebar.title("Admin Dashboard")
-        menu = ["Add Patient", "Remove Patient", "View Patients", "Add Doctor", "View Doctors"]
-        choice = st.sidebar.selectbox("Menu", menu)
+            st.error("Invalid username or password")
 
-        # Add a new patient
-        if choice == "Add Patient":
-            st.subheader("Add New Patient")
-            name = st.text_input("Patient Name")
-            email = st.text_input("Email")
-            medical_history = st.text_area("Medical History")
+# Function to display patient dashboard
+def patient_dashboard():
+    st.title(f"Welcome {st.session_state.user['name']} (Patient)")
 
-            if st.button("Add Patient"):
-                new_patient = {
-                    'id': generate_id(patients_data),
-                    'name': name,
-                    'email': email,
-                    'medical_history': medical_history
-                }
-                patients_data.append(new_patient)
-                st.success(f"Patient {name} added successfully!")
+    # Show patient's medical history
+    st.subheader("Medical History")
+    st.write("Display medical history here...")
 
-        # Remove a patient
-        elif choice == "Remove Patient":
-            st.subheader("Remove Patient")
-            if patients_data:
-                patient_options = [(p['id'], p['name']) for p in patients_data]
-                patient_id = st.selectbox("Select Patient to Remove", patient_options, format_func=lambda x: x[1])[0]
+    # Appointment booking
+    st.subheader("Book Appointment")
+    doctors = get_available_doctors()
+    if doctors:
+        doctor_choices = [f"{doctor['name']} ({doctor['specialty']})" for doctor in doctors]
+        selected_doctor = st.selectbox("Choose a Doctor", doctor_choices)
+        if st.button("Book Appointment"):
+            st.success(f"Appointment booked with {selected_doctor}")
+    else:
+        st.warning("No doctors available right now.")
 
-                if st.button("Remove Patient"):
-                    patients_data[:] = [p for p in patients_data if p['id'] != patient_id]
-                    st.success("Patient removed successfully!")
-            else:
-                st.write("No patients available.")
+# Function to display doctor dashboard
+def doctor_dashboard():
+    st.title(f"Welcome {st.session_state.user['name']} (Doctor)")
 
-        # View all patients
-        elif choice == "View Patients":
-            st.subheader("All Patients")
-            if patients_data:
-                df = pd.DataFrame(patients_data)
-                st.dataframe(df)
-            else:
-                st.write("No patients found.")
+    # Toggle doctor availability
+    st.subheader("Set Availability")
+    availability = st.radio("Availability", ("available", "not available"))
+    if st.button("Update Availability"):
+        toggle_availability(st.session_state.user['id'], availability)
+        st.success("Availability updated!")
 
-        # Add a new doctor
-        elif choice == "Add Doctor":
-            st.subheader("Add New Doctor")
-            name = st.text_input("Doctor Name")
-            specialty = st.text_input("Specialty")
+    # View appointments booked with the doctor
+    st.subheader("Appointments")
+    st.write("List of appointments booked with the doctor will go here...")
 
-            if st.button("Add Doctor"):
-                new_doctor = {
-                    'id': generate_id(doctors_data),
-                    'name': name,
-                    'specialty': specialty
-                }
-                doctors_data.append(new_doctor)
-                st.success(f"Doctor {name} added successfully!")
+# Function to display admin dashboard
+def admin_dashboard():
+    st.title(f"Welcome {st.session_state.user['name']} (Admin)")
 
-        # View all doctors
-        elif choice == "View Doctors":
-            st.subheader("All Doctors")
-            if doctors_data:
-                df = pd.DataFrame(doctors_data)
-                st.dataframe(df)
-            else:
-                st.write("No doctors found.")
+    # Add a new patient
+    st.subheader("Add New Patient")
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+    name = st.text_input("Name")
+    age = st.number_input("Age", min_value=0)
+    gender = st.selectbox("Gender", ["Male", "Female", "Other"])
+    if st.button("Add Patient"):
+        add_patient(username, password, name, age, gender)
+        st.success(f"Patient {name} added successfully!")
 
-    # Doctor Dashboard
-    elif st.session_state.role == "doctor":
-        st.sidebar.title("Doctor Dashboard")
-        menu = ["View Appointments", "Update Appointment Status"]
-        choice = st.sidebar.selectbox("Menu", menu)
-
-        # View appointments for the logged-in doctor
-        if choice == "View Appointments":
-            st.subheader("Your Appointments")
-            doctor_id = generate_id(doctors_data)
-            doctor_appointments = [a for a in appointments_data if a['doctor_id'] == doctor_id]
-
-            if doctor_appointments:
-                df = pd.DataFrame(doctor_appointments)
-                df['Patient Name'] = df['patient_id'].map(lambda pid: next(p['name'] for p in patients_data if p['id'] == pid))
-                df['Appointment Date'] = df['appointment_datetime'].map(lambda dt: dt.strftime("%Y-%m-%d %H:%M"))
-                df = df[['id', 'Patient Name', 'Appointment Date', 'status']]
-                st.dataframe(df)
-            else:
-                st.write("No appointments found.")
-
-        # Update appointment status
-        elif choice == "Update Appointment Status":
-            st.subheader("Update Appointment Status")
-            doctor_id = generate_id(doctors_data)
-            doctor_appointments = [a for a in appointments_data if a['doctor_id'] == doctor_id]
-
-            if doctor_appointments:
-                appointment_options = [(a['id'], a['appointment_datetime']) for a in doctor_appointments]
-                appointment_id = st.selectbox("Select Appointment to Update", appointment_options, format_func=lambda x: x[1])[0]
-                new_status = st.selectbox("New Status", ["Scheduled", "Completed", "Cancelled"])
-
-                if st.button("Update Status"):
-                    for a in appointments_data:
-                        if a['id'] == appointment_id:
-                            a['status'] = new_status
-                    st.success("Appointment status updated successfully!")
-            else:
-                st.write("No appointments found.")
-
-    # Patient Dashboard
-    elif st.session_state.role == "patient":
-        st.sidebar.title("Patient Dashboard")
-        menu = ["View Medical History", "Book Appointment"]
-        choice = st.sidebar.selectbox("Menu", menu)
-
-        # View medical history
-        if choice == "View Medical History":
-            st.subheader("Your Medical History")
-            patient_id = next((p['id'] for p in patients_data if p['name'] == username), None)
-
-            if patient_id is not None:
-                patient_info = next((p for p in patients_data if p['id'] == patient_id), None)
-                if patient_info:
-                    st.write("Name:", patient_info['name'])
-                    st.write("Email:", patient_info['email'])
-                    st.write("Medical History:", patient_info['medical_history'])
-                else:
-                    st.write("No medical history found.")
-            else:
-                st.write("No medical history found.")
-
-        # Book an appointment
-        elif choice == "Book Appointment":
-            st.subheader("Book Appointment")
-
-            if len(doctors_data) == 0:
-                st.warning("No doctors available. Please check back later.")
-            else:
-                doctor_options = [(d['id'], d['name']) for d in doctors_data]
-                doctor_id = st.selectbox("Select Doctor", doctor_options, format_func=lambda x: x[1])[0]
-                appointment_date = st.date_input("Appointment Date")
-                appointment_time = st.time_input("Appointment Time")
-
-                if st.button("Book Appointment"):
-                    new_appointment = {
-                        'id': generate_id(appointments_data),
-                        'patient_id': patient_id,
-                        'doctor_id': doctor_id,
-                        'appointment_datetime': datetime.combine(appointment_date, appointment_time),
-                        'status': "Scheduled"
-                    }
-                    appointments_data.append(new_appointment)
-                    st.success(f"Appointment booked with {username} on {new_appointment['appointment_datetime']}.")
-
-# Logout option
-if st.session_state.logged_in:
-    if st.button("Logout"):
+# Main function to control login and user roles
+def main():
+    if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
-        st.session_state.role = None
-        st.success("You have been logged out.")
+        st.session_state.user = None
+
+    if not st.session_state.logged_in:
+        login_page()
+    else:
+        user = st.session_state.user
+        if user['role'] == 'patient':
+            patient_dashboard()
+        elif user['role'] == 'doctor':
+            doctor_dashboard()
+        elif user['role'] == 'admin':
+            admin_dashboard()
+
+if __name__ == "__main__":
+    main()
