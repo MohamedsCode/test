@@ -1,25 +1,6 @@
 import streamlit as st
-import mysql.connector
 import pandas as pd
 
-# Function to create a database connection
-def create_connection():
-    connection = mysql.connector.connect(
-        host="your-host",  # Replace with your MySQL host
-        user="your-username",  # Replace with your MySQL username
-        password="your-password",  # Replace with your MySQL password
-        database="shms",  # Replace with your MySQL database name
-    )
-    return connection
-
-# Function to authenticate users
-def authenticate_user(username, password):
-    conn = create_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM users WHERE username=%s AND password=%s", (username, password))
-    user = cursor.fetchone()
-    conn.close()
-    return user
 
 # Function to get doctors for the patient to book appointments
 def get_available_doctors():
